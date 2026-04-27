@@ -1,110 +1,70 @@
 # Centralized Citizen Governance and Grievance Management System
 
-A complete student-friendly web application for complaint submission, tracking, and governance workflow.
+A production-ready web application for complaint submission, tracking, and governance workflow, featuring a modern React frontend and a robust Node.js backend.
 
 ## Tech Stack
-- Frontend: HTML, CSS, Vanilla JavaScript
-- Backend: Node.js, Express
-- Database: MySQL 8.0
-- Authentication: JWT-based login
+- **Frontend**: React 18, Vite, Tailwind CSS
+- **Backend**: Node.js, Express
+- **Database**: MySQL 8.0
+- **Authentication**: JWT-based secure login
 
 ## Roles Supported
-- Citizen
-- Government Officer
-- Admin
+- **Citizen**: Submit complaints, upload evidence, and track progress via timeline.
+- **Officer**: Manage department-specific complaints and update status with remarks.
+- **Admin**: Full system management (users, departments, assignments) and analytics.
 
 ## Features
-- Citizen registration and login
-- Complaint submission with category, department, and evidence upload
-- Complaint status tracking with timeline and officer remarks
-- Officer dashboard with complaint update and closure workflow
-- Admin department/user management, complaint assignment, and analytics reports
-- Role-based route protection and secure password hashing
+- Secure authentication with role-based access control.
+- Complaint submission with department categorization and image upload.
+- Interactive tracking with a real-time status timeline.
+- Officer dashboard with closure workflow and audit logs.
+- Admin dashboard with department-wise reports and user management.
+- Fully responsive UI optimized for desktop and mobile.
 
-## Folder Structure
+## Project Structure
 ```text
 CP/
-  frontend/
-    index.html
-    login.html
-    register.html
-    citizen-dashboard.html
-    submit-complaint.html
-    track-complaint.html
-    officer-dashboard.html
-    complaint-management.html
-    admin-dashboard.html
-    department-management.html
-    user-management.html
-    style.css
-    script.js
-
-  backend/
-    server.js
-    routes/
-      authRoutes.js
-      citizenRoutes.js
-      officerRoutes.js
-      adminRoutes.js
-    controllers/
-      authController.js
-      citizenController.js
-      officerController.js
-      adminController.js
-    middleware/
-      auth.js
-      upload.js
-    models/
-      userModel.js
-      departmentModel.js
-      complaintModel.js
-
-  database/
-    db.js
-    setup.sql
-
-  uploads/
-  package.json
-  .gitignore
+├── frontend/             # Modern React (Vite) Application
+│   ├── src/
+│   │   ├── components/   # Reusable UI components (Sidebar, Button, etc.)
+│   │   ├── pages/        # Main route pages (Dashboards, Login, etc.)
+│   │   ├── contexts/     # Auth and state management
+│   │   ├── services/     # API service layer
+│   │   └── App.tsx       # Main routing
+│   ├── vite.config.ts    # Build and proxy config
+│   └── package.json
+│
+├── backend/              # Node.js + Express API
+│   ├── routes/           # Role-specific route handlers
+│   ├── controllers/      # Business logic
+│   ├── models/           # MySQL data models
+│   └── server.js         # API entry point
+│
+├── database/             # Database scripts and migrations
+│   └── setup.sql         # Database schema and initial seed data
+│
+├── uploads/              # Storage for complaint evidence
+└── package.json          # Main project config
 ```
 
-## API Endpoints
-### Auth APIs
-- `POST /api/auth/register`
-- `POST /api/auth/login`
+## Setup and Installation
 
-### Citizen APIs
-- `POST /api/complaints`
-- `GET /api/complaints`
-- `GET /api/complaints/:id`
+### 1. Prerequisites
+- **Node.js** (v18 or higher)
+- **MySQL 8.0**
 
-### Officer APIs
-- `GET /api/officer/complaints`
-- `PUT /api/officer/complaints/:id`
-
-### Admin APIs
-- `POST /api/admin/departments`
-- `GET /api/admin/users`
-- `PUT /api/admin/assign`
-
-Additional admin APIs:
-- `POST /api/admin/officers`
-- `GET /api/admin/departments`
-- `GET /api/admin/complaints`
-- `GET /api/admin/reports`
-
-## How to Run
-1. Install **Node.js** (v18+ recommended) and **MySQL 8.0**.
-2. Open terminal in the project root (`CP`).
-3. Create the database by running the setup script:
+### 2. Database Setup
+1. Create the database and seed initial data:
    ```bash
    mysql -u root -p < database/setup.sql
    ```
-4. Install dependencies:
+
+### 3. Backend Setup
+1. From the project root (`CP`), install dependencies:
    ```bash
    npm install
    ```
-5. Create a `.env` file in the project root with these values:
+2. Create a `.env` file in the root with your configuration:
    ```env
    PORT=5000
    JWT_SECRET=your_secure_secret_here
@@ -113,23 +73,30 @@ Additional admin APIs:
    DB_PASSWORD=your_mysql_password
    DB_NAME=grievance_db
    ```
-6. Start server:
+3. Start the backend server:
    ```bash
    npm run dev
    ```
-   or
+
+### 4. Frontend Setup
+1. Open a new terminal in the `frontend` directory:
    ```bash
-   npm start
+   cd frontend
+   npm install
    ```
-7. Open in browser:
-   - `http://localhost:5000/`
+2. Start the Vite dev server:
+   ```bash
+   npm run dev
+   ```
+3. Access the application at: `http://localhost:3000`
 
-## Default Admin Login
-- Email: `admin@gov.local`
-- Password: `admin123`
+---
 
-## Notes
-- Evidence files are stored in `/uploads`.
-- Complaint timeline events are stored in a separate `complaint_timeline` table.
-- The database auto-seeds default departments and an admin user on first start.
-"# governance-system" 
+## Default Admin Credentials
+- **Email**: `admin@gov.local`
+- **Password**: `admin123`
+
+## Development Notes
+- The frontend is proxied to the backend on port 5000 via `vite.config.ts`.
+- Evidence uploads are handled via `multer` and served from the `/uploads` directory.
+- Use `npm run build` in the `frontend` directory for production-ready assets.
