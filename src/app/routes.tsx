@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter } from 'react-router';
 import { LoginPage } from './pages/LoginPage';
 import { AppLayout } from './components/layout/AppLayout';
 import { CitizenDashboard } from './pages/citizen/CitizenDashboard';
@@ -29,9 +29,6 @@ export const router = createBrowserRouter([
       { path: 'track', element: <TrackComplaint /> },
       { path: 'track/:id', element: <TrackComplaint /> },
       { path: 'complaints', element: <MyComplaints /> },
-      { path: 'my-complaints', element: <Navigate to="/citizen/complaints" replace /> },
-      { path: 'history', element: <MyComplaints /> },
-      { path: 'notifications', element: <CitizenDashboard /> },
       { path: 'profile', element: <GenericPage title="My Profile" description="Update your personal information, contact details, and account settings." /> },
     ],
   },
@@ -43,11 +40,6 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <OfficialDashboard /> },
       { path: 'complaints', element: <OfficialDashboard /> },
-      { path: 'verify', element: <OfficialDashboard /> },
-      { path: 'update', element: <OfficialDashboard /> },
-      { path: 'close', element: <OfficialDashboard /> },
-      { path: 'feedback', element: <OfficialDashboard /> },
-      { path: 'request-info', element: <OfficialDashboard /> },
       { path: 'reports', element: <OfficialDashboard /> },
       { path: 'profile', element: <GenericPage title="Profile" description="Manage your official profile and department preferences." /> },
     ],
@@ -60,14 +52,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <AdminDashboard /> },
       { path: 'users', element: <ManageUsers /> },
-      { path: 'roles', element: <ManageUsers /> },
       { path: 'reports', element: <Reports /> },
-      { path: 'export', element: <Reports /> },
-      { path: 'activity', element: <AdminDashboard /> },
       { path: 'notifications', element: <NotificationsConfig /> },
       { path: 'departments', element: <Departments /> },
-      { path: 'settings', element: <NotificationsConfig /> },
-      { path: 'security', element: <NotificationsConfig /> },
     ],
   },
 

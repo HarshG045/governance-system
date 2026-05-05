@@ -20,6 +20,18 @@ const formats = [
   { id: 'pdf', label: 'PDF', icon: FileText },
   { id: 'excel', label: 'Excel', icon: BarChart2 },
   { id: 'csv', label: 'CSV', icon: TrendingUp },
+
+const reportTypes = [
+  { id: 'summary', label: 'Complaints Summary' },
+  { id: 'dept', label: 'Department Performance' },
+  { id: 'resolution', label: 'Resolution Time' },
+  { id: 'category', label: 'Category Breakdown' },
+];
+
+const formats = [
+  { id: 'pdf', label: 'PDF', icon: FileText },
+  { id: 'excel', label: 'Excel', icon: BarChart2 },
+  { id: 'csv', label: 'CSV', icon: TrendingUp },
 ];
 
 const departments = ['All Departments', 'Public Works', 'Water Supply Board', 'Electricity Board', 'Municipal Corporation'];
@@ -28,6 +40,7 @@ const statuses = ['All', 'Pending', 'In Progress', 'Resolved', 'Closed'];
 
 
 export function Reports() {
+  const location = useLocation();
   const [reportType, setReportType] = useState('summary');
   const [format, setFormat] = useState('pdf');
   const [fromDate, setFromDate] = useState('2024-11-01');

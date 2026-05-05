@@ -57,7 +57,7 @@ export function SubmitComplaint() {
       setLoadError('');
       try {
         const row = await complaintsApi.getById(editId);
-        if (user?.id && row.user_id && row.user_id !== user.id) {
+        if (user?.id && row.citizen_id && row.citizen_id !== user.id) {
           throw new Error('unauthorized');
         }
 
@@ -195,10 +195,10 @@ export function SubmitComplaint() {
           <h2 className="text-gray-900 mb-2">Edit unavailable</h2>
           <p className="text-sm text-gray-500 mb-4">{loadError}</p>
           <button
-            onClick={() => navigate('/citizen/history')}
+            onClick={() => navigate('/citizen/complaints')}
             className="px-4 py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700"
           >
-            Back to history
+            Back to complaints
           </button>
         </div>
       </div>
@@ -222,10 +222,10 @@ export function SubmitComplaint() {
           </div>
           <div className="flex flex-col gap-2">
             <button
-              onClick={() => navigate('/citizen/history')}
+              onClick={() => navigate('/citizen/complaints')}
               className="w-full py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
             >
-              {isEditMode ? 'Back to History' : 'Track Your Complaint'}
+              {isEditMode ? 'Back to Complaints' : 'View Your Complaints'}
             </button>
             <button
               onClick={() => navigate('/citizen')}

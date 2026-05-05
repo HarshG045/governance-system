@@ -44,7 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('token', token);
       setUser(user);
       return true;
-    } catch {
+    } catch (error: any) {
+      if (error?.message?.startsWith('Network error')) throw error;
       return false;
     }
   };
@@ -58,7 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('token', token);
       setUser(user);
       return true;
-    } catch {
+    } catch (error: any) {
+      if (error?.message?.startsWith('Network error')) throw error;
       return false;
     }
   };

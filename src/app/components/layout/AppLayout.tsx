@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router';
+import { Outlet, useNavigate, useLocation, NavLink } from 'react-router';
 import {
-  LayoutDashboard, FileText, Search, Clock, Bell, User, LogOut,
+  LayoutDashboard, Search, Bell, User, LogOut,
   ClipboardList, CheckSquare, RefreshCw, XCircle, MessageSquare,
-  Info, BarChart2, Users, Shield, Download, Activity, Settings,
+  Info, BarChart2, Users, Shield, Download, Settings,
   Building2, Menu, X, ChevronDown, FilePlus,
 } from 'lucide-react';
 import { useAuth, type UserRole } from '../../../lib/auth';
@@ -17,34 +17,22 @@ const citizenMenu = [
   { icon: FilePlus, label: 'Submit Complaint', path: '/citizen/submit' },
   { icon: ClipboardList, label: 'My Complaints', path: '/citizen/complaints' },
   { icon: Search, label: 'Track Complaint', path: '/citizen/track' },
-  { icon: Clock, label: 'History', path: '/citizen/history' },
-  { icon: Bell, label: 'Notifications', path: '/citizen/notifications' },
   { icon: User, label: 'My Profile', path: '/citizen/profile' },
 ];
 
 const officialMenu = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/official' },
-  { icon: ClipboardList, label: 'View Complaints', path: '/official/complaints', badge: 12 },
-  { icon: CheckSquare, label: 'Verify Complaints', path: '/official/verify' },
-  { icon: RefreshCw, label: 'Update Status', path: '/official/update' },
-  { icon: XCircle, label: 'Close Complaint', path: '/official/close' },
-  { icon: MessageSquare, label: 'Provide Feedback', path: '/official/feedback' },
-  { icon: Info, label: 'Request Info', path: '/official/request-info' },
-  { icon: BarChart2, label: 'My Reports', path: '/official/reports' },
+  { icon: ClipboardList, label: 'Complaints', path: '/official/complaints', badge: 12 },
+  { icon: BarChart2, label: 'Reports', path: '/official/reports' },
   { icon: User, label: 'Profile', path: '/official/profile' },
 ];
 
 const adminMenu = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
   { icon: Users, label: 'Manage Users', path: '/admin/users' },
-  { icon: Shield, label: 'Assign Roles', path: '/admin/roles' },
-  { icon: BarChart2, label: 'Generate Reports', path: '/admin/reports' },
-  { icon: Download, label: 'Export Reports', path: '/admin/export' },
-  { icon: Activity, label: 'Monitor Activity', path: '/admin/activity' },
-  { icon: Bell, label: 'Configure Notifications', path: '/admin/notifications' },
-  { icon: Building2, label: 'Manage Departments', path: '/admin/departments' },
-  { icon: Settings, label: 'System Settings', path: '/admin/settings' },
-  { icon: Shield, label: 'Security (2FA)', path: '/admin/security' },
+  { icon: BarChart2, label: 'System Reports', path: '/admin/reports' },
+  { icon: Bell, label: 'Notifications', path: '/admin/notifications' },
+  { icon: Building2, label: 'Departments', path: '/admin/departments' },
 ];
 
 const roleConfig: Record<UserRole, { label: string; color: string; bgColor: string; menu: typeof citizenMenu }> = {
@@ -138,14 +126,7 @@ export function AppLayout() {
 
   const handleSettingsNavigate = () => {
     setProfileOpen(false);
-    navigate(role === 'admin' ? '/admin/settings' : `/${role}/profile`);
-  };
-
-  const isActive = (path: string) => {
-    if (path === '/citizen' || path === '/official' || path === '/admin') {
-      return location.pathname === path;
-    }
-    return location.pathname.startsWith(path);
+    navigate(role === 'admin' ? '/admin/notifications' : `/${role}/profile`);
   };
 
   return (
@@ -168,14 +149,17 @@ export function AppLayout() {
         <nav className="flex-1 overflow-y-auto py-3">
           {cfg.menu.map((item) => {
             const Icon = item.icon;
-            const active = isActive(item.path);
+            // Dashboard roots should use 'end' to avoid highlighting when on sub-pages
+            const isRoot = ['/citizen', '/official', '/admin'].includes(item.path);
+            
             return (
-              <button
+              <NavLink
                 key={item.path}
-                onClick={() => navigate(item.path)}
+                to={item.path}
+                end={isRoot}
                 title={!sidebarOpen ? item.label : undefined}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors relative ${
-                  active
+                className={({ isActive }) => `w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors relative ${
+                  isActive
                     ? 'bg-blue-50 text-[#1A56DB] font-medium border-r-2 border-[#1A56DB]'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
@@ -189,7 +173,7 @@ export function AppLayout() {
                     {item.badge}
                   </span>
                 )}
-              </button>
+              </NavLink>
             );
           })}
         </nav>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { ClipboardList, CheckCircle, Clock, TrendingUp, Eye, Check, Edit2, Info, Star, X, ChevronRight } from 'lucide-react';
 import { StatusBadge, PriorityBadge } from '../../components/common/StatusBadge';
 import { useAuth } from '../../../lib/auth';
@@ -11,7 +12,16 @@ const filters: (ComplaintStatus | 'All')[] = ['All', 'Pending', 'In Progress', '
 
 export function OfficialDashboard() {
   const { user } = useAuth();
+  const location = useLocation();
   const [activeFilter, setActiveFilter] = useState<ComplaintStatus | 'All'>('All');
+  
+  // Update filter based on path
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.endsWith('/complaints') || path.endsWith('/reports')) setActiveFilter('All');
+    else if (path === '/official') setActiveFilter('All');
+  }, [location.pathname]);
+
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
   const [note, setNote] = useState('');
   const [statusUpdate, setStatusUpdate] = useState<ComplaintStatus>('In Progress');

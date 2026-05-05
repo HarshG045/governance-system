@@ -58,10 +58,15 @@ export function LoginPage() {
     if (Object.keys(nextErrors).length) return;
 
     setLoading(true);
-    const success = await login(email, password);
-    setLoading(false);
-    if (success) toast.success('Signed in successfully');
-    if (!success) toast.error('Invalid email or password');
+    try {
+      const success = await login(email, password);
+      if (success) toast.success('Signed in successfully');
+      if (!success) toast.error('Invalid email or password');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to reach the backend server');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -80,16 +85,21 @@ export function LoginPage() {
     if (Object.keys(nextErrors).length) return;
 
     setLoading(true);
-    const success = await register({
-      email: regEmail,
-      password: regPass,
-      name: regName,
-      phone: regPhone,
-      role: 'citizen', // Default role for registration
-    });
-    setLoading(false);
-    if (success) toast.success('Account created successfully');
-    if (!success) toast.error('Registration failed');
+    try {
+      const success = await register({
+        email: regEmail,
+        password: regPass,
+        name: regName,
+        phone: regPhone,
+        role: 'citizen', // Default role for registration
+      });
+      if (success) toast.success('Account created successfully');
+      if (!success) toast.error('Registration failed');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to reach the backend server');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleVerifyOTP = async () => {
