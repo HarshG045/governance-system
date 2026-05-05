@@ -13,6 +13,7 @@ import { Departments } from './pages/admin/Departments';
 import { NotificationsConfig } from './pages/admin/NotificationsConfig';
 import { NotFound } from './pages/NotFound';
 import { GenericPage } from './pages/GenericPage';
+import { Unauthorized } from './pages/Unauthorized';
 
 export const router = createBrowserRouter([
   { path: '/', element: <LoginPage /> },
@@ -26,9 +27,11 @@ export const router = createBrowserRouter([
       { path: 'submit', element: <SubmitComplaint /> },
       { path: 'edit/:id', element: <SubmitComplaint /> },
       { path: 'track', element: <TrackComplaint /> },
+      { path: 'track/:id', element: <TrackComplaint /> },
       { path: 'complaints', element: <MyComplaints /> },
+      { path: 'my-complaints', element: <Navigate to="/citizen/complaints" replace /> },
       { path: 'history', element: <MyComplaints /> },
-      { path: 'notifications', element: <GenericPage title="Notifications" description="View all your notifications and alert preferences." /> },
+      { path: 'notifications', element: <CitizenDashboard /> },
       { path: 'profile', element: <GenericPage title="My Profile" description="Update your personal information, contact details, and account settings." /> },
     ],
   },
@@ -40,12 +43,12 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <OfficialDashboard /> },
       { path: 'complaints', element: <OfficialDashboard /> },
-      { path: 'verify', element: <GenericPage title="Verify Complaints" description="Review and verify incoming complaints before assigning to your team." /> },
-      { path: 'update', element: <GenericPage title="Update Ticket Status" description="Bulk update complaint ticket statuses and add resolution notes." /> },
-      { path: 'close', element: <GenericPage title="Close Complaint" description="Mark complaints as resolved and provide closure feedback." /> },
-      { path: 'feedback', element: <GenericPage title="Provide Feedback" description="Rate resolution quality and provide official remarks." /> },
-      { path: 'request-info', element: <GenericPage title="Request Additional Info" description="Send information requests to citizens for pending complaints." /> },
-      { path: 'reports', element: <GenericPage title="My Reports" description="View your personal performance reports and resolution statistics." /> },
+      { path: 'verify', element: <OfficialDashboard /> },
+      { path: 'update', element: <OfficialDashboard /> },
+      { path: 'close', element: <OfficialDashboard /> },
+      { path: 'feedback', element: <OfficialDashboard /> },
+      { path: 'request-info', element: <OfficialDashboard /> },
+      { path: 'reports', element: <OfficialDashboard /> },
       { path: 'profile', element: <GenericPage title="Profile" description="Manage your official profile and department preferences." /> },
     ],
   },
@@ -57,16 +60,17 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <AdminDashboard /> },
       { path: 'users', element: <ManageUsers /> },
-      { path: 'roles', element: <GenericPage title="Assign Roles" description="Manage role assignments and permissions for users across all departments." /> },
+      { path: 'roles', element: <ManageUsers /> },
       { path: 'reports', element: <Reports /> },
       { path: 'export', element: <Reports /> },
-      { path: 'activity', element: <GenericPage title="Monitor Activity" description="Real-time activity monitoring for all system events and user actions." /> },
+      { path: 'activity', element: <AdminDashboard /> },
       { path: 'notifications', element: <NotificationsConfig /> },
       { path: 'departments', element: <Departments /> },
-      { path: 'settings', element: <GenericPage title="System Settings" description="Configure global system parameters, branding and security policies." /> },
-      { path: 'security', element: <GenericPage title="Security & 2FA" description="Configure two-factor authentication and security policies for all roles." /> },
+      { path: 'settings', element: <NotificationsConfig /> },
+      { path: 'security', element: <NotificationsConfig /> },
     ],
   },
 
+  { path: '/403', element: <Unauthorized /> },
   { path: '*', element: <NotFound /> },
 ]);

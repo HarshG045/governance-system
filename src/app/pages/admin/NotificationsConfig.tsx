@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Mail, MessageSquare, Bell, Smartphone, Edit2, X, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Template {
   id: string;
@@ -26,15 +27,64 @@ export function NotificationsConfig() {
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [smsEnabled, setSmsEnabled] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
+  const [configModal, setConfigModal] = useState<'smtp' | 'sms' | null>(null);
+  const [configValue, setConfigValue] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('notificationConfig');
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      setTemplates(parsed.templates || initialTemplates);
+      setEmailEnabled(parsed.emailEnabled ?? true);
+      setSmsEnabled(parsed.smsEnabled ?? false);
+      setPushEnabled(parsed.pushEnabled ?? true);
+    } catch {
+      localStorage.removeItem('notificationConfig');
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('notificationConfig', JSON.stringify({ templates, emailEnabled, smsEnabled, pushEnabled }));
+  }, [templates, emailEnabled, smsEnabled, pushEnabled]);
 
   const toggleTemplate = (id: string) => {
     setTemplates(prev => prev.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t));
+    toast.success('Template setting saved');
   };
 
   const handleEditSave = () => {
     if (!editTemplate) return;
+    if (!editTemplate.subject.trim() || !editTemplate.body.trim()) {
+      toast.error('Subject and body are required');
+      return;
+    }
     setTemplates(prev => prev.map(t => t.id === editTemplate.id ? editTemplate : t));
     setEditTemplate(null);
+    toast.success('Template saved');
+  };
+
+  const handleChannelToggle = (channel: 'email' | 'sms' | 'push') => {
+    if (channel === 'email') setEmailEnabled(prev => !prev);
+    if (channel === 'sms') setSmsEnabled(prev => !prev);
+    if (channel === 'push') setPushEnabled(prev => !prev);
+    toast.success('Delivery channel setting saved');
+  };
+
+  const openConfig = (kind: 'smtp' | 'sms') => {
+    setConfigModal(kind);
+    setConfigValue(localStorage.getItem(`${kind}Config`) || '');
+  };
+
+  const handleConfigSave = () => {
+    if (!configValue.trim()) {
+      toast.error('Configuration value is required');
+      return;
+    }
+    localStorage.setItem(`${configModal}Config`, configValue.trim());
+    setConfigModal(null);
+    setConfigValue('');
+    toast.success('Provider configuration saved');
   };
 
   const highlightVars = (text: string) => {
@@ -107,11 +157,11 @@ export function NotificationsConfig() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-900">Email</p>
-                    <button className="text-xs text-blue-600 hover:underline">SMTP config →</button>
+                    <button onClick={() => openConfig('smtp')} className="text-xs text-blue-600 hover:underline">SMTP config →</button>
                   </div>
                 </div>
                 <button
-                  onClick={() => setEmailEnabled(!emailEnabled)}
+                  onClick={() => handleChannelToggle('email')}
                   className={`relative inline-flex w-10 h-5 rounded-full transition-colors ${emailEnabled ? 'bg-[#1A56DB]' : 'bg-gray-200'}`}
                 >
                   <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform top-0.5 left-0.5 absolute ${emailEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -126,11 +176,11 @@ export function NotificationsConfig() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-900">SMS</p>
-                    <button className="text-xs text-blue-600 hover:underline">Provider config →</button>
+                    <button onClick={() => openConfig('sms')} className="text-xs text-blue-600 hover:underline">Provider config →</button>
                   </div>
                 </div>
                 <button
-                  onClick={() => setSmsEnabled(!smsEnabled)}
+                  onClick={() => handleChannelToggle('sms')}
                   className={`relative inline-flex w-10 h-5 rounded-full transition-colors ${smsEnabled ? 'bg-[#1A56DB]' : 'bg-gray-200'}`}
                 >
                   <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform top-0.5 left-0.5 absolute ${smsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -165,7 +215,7 @@ export function NotificationsConfig() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setPushEnabled(!pushEnabled)}
+                  onClick={() => handleChannelToggle('push')}
                   className={`relative inline-flex w-10 h-5 rounded-full transition-colors ${pushEnabled ? 'bg-[#1A56DB]' : 'bg-gray-200'}`}
                 >
                   <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform top-0.5 left-0.5 absolute ${pushEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -229,6 +279,30 @@ export function NotificationsConfig() {
               <button onClick={handleEditSave} className="flex-1 py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
                 <Check className="w-4 h-4" /> Save Template
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {configModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfigModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={event => event.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-gray-900">{configModal === 'smtp' ? 'SMTP Configuration' : 'SMS Provider Configuration'}</h3>
+              <button onClick={() => setConfigModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <label className="block text-sm text-gray-700 mb-1">Provider details</label>
+            <textarea
+              value={configValue}
+              onChange={event => setConfigValue(event.target.value)}
+              rows={5}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder={configModal === 'smtp' ? 'smtp.example.com:587, username, sender email' : 'Provider name, sender ID, callback URL'}
+            />
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setConfigModal(null)} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleConfigSave} className="flex-1 py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700">Save Config</button>
             </div>
           </div>
         </div>

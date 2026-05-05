@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { FileText, Download, BarChart2, TrendingUp } from 'lucide-react';
+import { FileText, Download, BarChart2, TrendingUp, AlertCircle } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line,
 } from 'recharts';
-import { chartBarData, chartLineData } from '../../data/mockData';
+import { useEffect, useMemo } from 'react';
+import { complaintsApi } from '../../../lib/api';
+import type { Complaint } from '../../../lib/types';
+import { toast } from 'sonner';
 
 const reportTypes = [
   { id: 'summary', label: 'Complaints Summary' },
@@ -22,13 +25,7 @@ const formats = [
 const departments = ['All Departments', 'Public Works', 'Water Supply Board', 'Electricity Board', 'Municipal Corporation'];
 const statuses = ['All', 'Pending', 'In Progress', 'Resolved', 'Closed'];
 
-const previewData = [
-  { department: 'Municipal Corp.', total: 45, pending: 12, resolved: 28, avgDays: 4.2 },
-  { department: 'Electricity Board', total: 31, pending: 8, resolved: 20, avgDays: 3.1 },
-  { department: 'Public Works', total: 23, pending: 6, resolved: 14, avgDays: 5.8 },
-  { department: 'Water Supply', total: 17, pending: 4, resolved: 12, avgDays: 2.9 },
-  { department: 'Town Planning', total: 9, pending: 2, resolved: 6, avgDays: 7.0 },
-];
+
 
 export function Reports() {
   const [reportType, setReportType] = useState('summary');
@@ -38,6 +35,112 @@ export function Reports() {
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [generated, setGenerated] = useState(false);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const c = await complaintsApi.getAll();
+      setComplaints(c as any[]);
+    } catch (err: any) {
+      const message = err.message || 'Unable to load report data';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const filteredComplaints = useMemo(() => {
+    return complaints.filter(c => {
+      const created = c.created_at ? new Date(c.created_at) : null;
+      const from = fromDate ? new Date(fromDate) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      const matchesDate = (!created || ((!from || created >= from) && (!to || created <= to)));
+      const matchesDept = selectedDepts.length === 0 || selectedDepts.includes(c.department || '');
+      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(c.status);
+      return matchesDate && matchesDept && matchesStatus;
+    });
+  }, [complaints, fromDate, toDate, selectedDepts, selectedStatuses]);
+
+  const previewData = useMemo(() => {
+    const grouped = filteredComplaints.reduce((acc, c) => {
+      const dept = c.department || 'Unassigned';
+      if (!acc[dept]) acc[dept] = { total: 0, pending: 0, resolved: 0 };
+      acc[dept].total++;
+      if (c.status === 'Pending') acc[dept].pending++;
+      if (c.status === 'Resolved' || c.status === 'Closed') acc[dept].resolved++;
+      return acc;
+    }, {} as Record<string, any>);
+    return Object.keys(grouped).map(dept => ({
+      department: dept,
+      total: grouped[dept].total,
+      pending: grouped[dept].pending,
+      resolved: grouped[dept].resolved,
+      avgDays: 0
+    }));
+  }, [filteredComplaints]);
+
+  const chartBarData = useMemo(() => {
+    const counts = filteredComplaints.reduce((acc, c) => { acc[c.category] = (acc[c.category] || 0) + 1; return acc; }, {} as Record<string, number>);
+    return Object.keys(counts).map(k => ({ category: k, count: counts[k] }));
+  }, [filteredComplaints]);
+
+  const chartLineData = useMemo(() => {
+    const groups = filteredComplaints.reduce((acc, c) => {
+      const created = c.created_at ? new Date(c.created_at) : new Date();
+      const key = created.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      if (!acc[key]) acc[key] = { week: key, submitted: 0, resolved: 0 };
+      acc[key].submitted += 1;
+      if (c.status === 'Resolved' || c.status === 'Closed') acc[key].resolved += 1;
+      return acc;
+    }, {} as Record<string, { week: string; submitted: number; resolved: number }>);
+    return Object.values(groups).slice(-8);
+  }, [filteredComplaints]);
+
+  const handleGenerate = () => {
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
+      toast.error('From date must be before to date');
+      return;
+    }
+    setGenerated(true);
+    toast.success('Report generated');
+  };
+
+  const handleExport = () => {
+    if (filteredComplaints.length === 0) {
+      toast.info('No rows available to export');
+      return;
+    }
+
+    const headers = ['ID', 'Title', 'Department', 'Category', 'Status', 'Priority', 'Created At'];
+    const rows = filteredComplaints.map(c => [
+      c.ticket_number || c.id,
+      `"${c.title.replace(/"/g, '""')}"`,
+      c.department || '',
+      c.category,
+      c.status,
+      c.priority,
+      c.created_at || '',
+    ].join(','));
+    const blob = new Blob([[headers.join(','), ...rows].join('\n')], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `complaints_report_${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'csv' : format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Report exported');
+  };
 
   const toggleDept = (d: string) => setSelectedDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   const toggleStatus = (s: string) => setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -132,10 +235,11 @@ export function Reports() {
             </div>
 
             <button
-              onClick={() => setGenerated(true)}
+              onClick={handleGenerate}
+              disabled={loading}
               className="w-full py-2.5 bg-[#DC2626] text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
             >
-              Generate Report
+              {loading ? 'Loading...' : 'Generate Report'}
             </button>
           </div>
         </div>
@@ -144,13 +248,19 @@ export function Reports() {
         <div className="xl:col-span-2 space-y-4">
           {generated ? (
             <>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm flex items-center justify-between">
+                  <span><AlertCircle className="w-4 h-4 inline mr-2" />{error}</span>
+                  <button onClick={load} className="px-3 py-1.5 border border-red-200 rounded-lg text-xs hover:bg-red-50">Try again</button>
+                </div>
+              )}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-gray-900">Report Preview</h3>
                     <p className="text-xs text-gray-400 mt-0.5">{fromDate} to {toDate} · {reportTypes.find(r => r.id === reportType)?.label}</p>
                   </div>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-[#DC2626] text-white rounded-lg text-sm font-medium hover:bg-red-700">
+                  <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-[#DC2626] text-white rounded-lg text-sm font-medium hover:bg-red-700">
                     <Download className="w-4 h-4" /> Export Now
                   </button>
                 </div>
@@ -175,6 +285,9 @@ export function Reports() {
                           <td className="px-3 py-2.5 text-sm text-gray-600">{row.avgDays}d</td>
                         </tr>
                       ))}
+                      {previewData.length === 0 && (
+                        <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-gray-500">No report data for the selected filters.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

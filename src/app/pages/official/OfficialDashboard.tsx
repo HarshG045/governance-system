@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ClipboardList, CheckCircle, Clock, TrendingUp, Eye, Check, Edit2, Info, Star, X, ChevronRight } from 'lucide-react';
-import { mockAllComplaints } from '../../data/mockData';
 import { StatusBadge, PriorityBadge } from '../../components/common/StatusBadge';
-import { useAuth } from '../../contexts/AuthContext';
-import type { Complaint, ComplaintStatus } from '../../data/mockData';
-import { fetchComplaints, normalizeComplaint } from '../../utils/complaintApi';
+import { useAuth } from '../../../lib/auth';
+import type { Complaint, ComplaintStatus } from '../../../lib/types';
+import { commentsApi, complaintsApi } from '../../../lib/api';
+import { toast } from 'sonner';
+import { ConfirmModal } from '../../components/common/ConfirmModal';
 
 const filters: (ComplaintStatus | 'All')[] = ['All', 'Pending', 'In Progress', 'Needs Info', 'Resolved'];
 
@@ -19,21 +20,25 @@ export function OfficialDashboard() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [closeConfirm, setCloseConfirm] = useState(false);
+
+  const loadComplaints = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const rows = await complaintsApi.getAll();
+      setComplaints(rows as any[]);
+    } catch (err: any) {
+      setError(err.message || 'Unable to load complaints');
+      toast.error(err.message || 'Unable to load complaints');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadComplaints() {
-      setLoading(true);
-      try {
-        const rows = await fetchComplaints();
-        setComplaints(rows.map(row => normalizeComplaint(row, 'Citizen')));
-      } catch (error) {
-        console.error(error);
-        setComplaints(mockAllComplaints);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadComplaints();
   }, []);
 
@@ -45,33 +50,106 @@ export function OfficialDashboard() {
     { label: 'Assigned to Me', value: assigned.length, icon: ClipboardList, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Pending Verification', value: pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
     { label: 'Resolved This Week', value: resolved, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Avg. Resolution Time', value: '3.2d', icon: TrendingUp, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { label: 'Avg. Resolution Time', value: resolved ? `${Math.max(1, Math.round(complaints.length / resolved))}d` : '0d', icon: TrendingUp, color: 'text-teal-600', bg: 'bg-teal-50' },
   ];
 
   const filtered = complaints.filter(c => activeFilter === 'All' || c.status === activeFilter);
 
   const handleUpdateStatus = async () => {
-    if (!selectedComplaint) return;
+    if (!selectedComplaint?.id) return;
+    setSaving(true);
     try {
-      const numericId = selectedComplaint.rawId;
-      if (!numericId) {
-        throw new Error('missing complaint id');
+      const updated = await complaintsApi.update(selectedComplaint.id, { status: statusUpdate });
+      if (note.trim()) {
+        await commentsApi.create(selectedComplaint.id, { comment: note.trim() });
       }
-      const response = await fetch(`/api/complaints/${numericId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: statusUpdate.toLowerCase() }),
-      });
 
-      if (!response.ok) throw new Error('status update failed');
-
-      setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? { ...c, status: statusUpdate } : c));
-      setSelectedComplaint(prev => prev ? { ...prev, status: statusUpdate } : null);
-    } catch (error) {
-      console.error(error);
-      alert('Failed to update complaint status.');
+      setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? updated as any : c));
+      setSelectedComplaint(updated as any);
+      setNote('');
+      toast.success('Complaint status updated');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update complaint status');
+    } finally {
+      setSaving(false);
     }
   };
+
+  const handleQuickStatus = async (complaint: Complaint, status: ComplaintStatus) => {
+    setSaving(true);
+    try {
+      const updated = await complaintsApi.update(complaint.id, { status });
+      setComplaints(prev => prev.map(c => c.id === complaint.id ? updated as any : c));
+      if (selectedComplaint?.id === complaint.id) setSelectedComplaint(updated as any);
+      toast.success(`Complaint marked ${status}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to update complaint');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRequestInfo = async () => {
+    if (!selectedComplaint?.id) return;
+    if (!note.trim()) {
+      toast.error('Add an official note describing the information needed');
+      return;
+    }
+    setStatusUpdate('Needs Info');
+    setSaving(true);
+    try {
+      const updated = await complaintsApi.update(selectedComplaint.id, { status: 'Needs Info' });
+      await commentsApi.create(selectedComplaint.id, { comment: `Information requested: ${note.trim()}` });
+      setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? updated as any : c));
+      setSelectedComplaint(updated as any);
+      setNote('');
+      toast.success('Information request sent');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to request information');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!selectedComplaint?.id) return;
+    if (!rating || !feedbackText.trim()) {
+      toast.error('Add a rating and feedback before submitting');
+      return;
+    }
+    setSaving(true);
+    try {
+      await commentsApi.create(selectedComplaint.id, { comment: `Resolution feedback (${rating}/5): ${feedbackText.trim()}` });
+      setRating(0);
+      setFeedbackText('');
+      setShowFeedback(false);
+      toast.success('Feedback submitted');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to submit feedback');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCloseComplaint = async () => {
+    if (!selectedComplaint?.id) return;
+    setSaving(true);
+    try {
+      const updated = await complaintsApi.update(selectedComplaint.id, { status: 'Closed' });
+      setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? updated as any : c));
+      setSelectedComplaint(updated as any);
+      setCloseConfirm(false);
+      toast.success('Complaint closed');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to close complaint');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const attachments = selectedComplaint?.attachments && Array.isArray((selectedComplaint as any).attachments)
+    ? (selectedComplaint as any).attachments as Array<{ name: string; type?: string }>
+    : [];
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -130,9 +208,18 @@ export function OfficialDashboard() {
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">Loading complaints...</td>
                 </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-red-600">
+                    {error}
+                    <button onClick={loadComplaints} className="ml-3 px-3 py-1.5 border border-red-200 rounded-lg text-xs hover:bg-red-50">Try again</button>
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">No complaints match this filter.</td></tr>
               ) : filtered.map(c => (
                 <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.id}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.ticket_number || c.id.substring(0,8)}</td>
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-gray-900 truncate max-w-[180px]">{c.title}</div>
                     <div className="text-xs text-gray-400">{c.citizenName}</div>
@@ -146,9 +233,9 @@ export function OfficialDashboard() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => setSelectedComplaint(c)} className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600" title="View"><Eye className="w-3.5 h-3.5" /></button>
-                      <button className="p-1.5 rounded-lg hover:bg-green-50 text-gray-400 hover:text-green-600" title="Verify"><Check className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => handleQuickStatus(c, 'Verified')} className="p-1.5 rounded-lg hover:bg-green-50 text-gray-400 hover:text-green-600" title="Verify"><Check className="w-3.5 h-3.5" /></button>
                       <button onClick={() => { setSelectedComplaint(c); }} className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600" title="Update"><Edit2 className="w-3.5 h-3.5" /></button>
-                      <button className="p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-600" title="Request Info"><Info className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => { setSelectedComplaint(c); setStatusUpdate('Needs Info'); setNote(''); }} className="p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-600" title="Request Info"><Info className="w-3.5 h-3.5" /></button>
                     </div>
                   </td>
                 </tr>
@@ -165,7 +252,7 @@ export function OfficialDashboard() {
           <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div>
-                <span className="text-xs font-mono text-gray-500">{selectedComplaint.id}</span>
+                <span className="text-xs font-mono text-gray-500">{selectedComplaint.ticket_number || selectedComplaint.id.substring(0,8)}</span>
                 <h3 className="text-gray-900 mt-0.5">{selectedComplaint.title}</h3>
               </div>
               <button onClick={() => setSelectedComplaint(null)} className="p-2 rounded-lg hover:bg-gray-100">
@@ -184,21 +271,20 @@ export function OfficialDashboard() {
                 <p className="text-sm text-gray-600 leading-relaxed">{selectedComplaint.description}</p>
                 <p className="text-xs text-gray-400">📍 {selectedComplaint.location}</p>
                 <p className="text-xs text-gray-400">👤 Citizen: {selectedComplaint.citizenName}</p>
-                <p className="text-xs text-gray-400">📅 Submitted: {selectedComplaint.date}</p>
+                <p className="text-xs text-gray-400">📅 Submitted: {selectedComplaint.created_at ? new Date(selectedComplaint.created_at).toLocaleDateString() : selectedComplaint.date}</p>
               </div>
 
               {/* Evidence */}
               <div>
                 <h4 className="text-gray-900 mb-2 text-sm">Evidence Gallery</h4>
                 <div className="grid grid-cols-3 gap-2">
-                  {[1, 2].map(i => (
-                    <div key={i} className="aspect-square bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center text-xs text-gray-400">
-                      Photo {i}
+                  {attachments.length > 0 ? attachments.map(file => (
+                    <div key={file.name} className="aspect-square bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center text-xs text-gray-500 text-center p-2">
+                      {file.name}
                     </div>
-                  ))}
-                  <div className="aspect-square bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-xs text-gray-300">
-                    No more
-                  </div>
+                  )) : (
+                    <div className="col-span-3 bg-gray-50 rounded-lg border border-gray-200 p-4 text-xs text-gray-400 text-center">No evidence attached</div>
+                  )}
                 </div>
               </div>
 
@@ -246,8 +332,8 @@ export function OfficialDashboard() {
                     placeholder="Official remarks on resolution..."
                     className="w-full px-3 py-2 border border-teal-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none bg-white"
                   />
-                  <button className="mt-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700">
-                    Submit Feedback
+                  <button onClick={handleSubmitFeedback} disabled={saving} className="mt-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-60">
+                    {saving ? 'Submitting...' : 'Submit Feedback'}
                   </button>
                 </div>
               )}
@@ -256,16 +342,18 @@ export function OfficialDashboard() {
             <div className="p-5 border-t border-gray-100 space-y-2">
               <div className="flex gap-2">
                 <button
-                  onClick={() => {}}
+                  onClick={handleRequestInfo}
+                  disabled={saving}
                   className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 flex items-center justify-center gap-1"
                 >
                   <Info className="w-3.5 h-3.5" /> Request Info
                 </button>
                 <button
                   onClick={handleUpdateStatus}
+                  disabled={saving}
                   className="flex-1 py-2 bg-[#0D9488] text-white rounded-lg text-sm font-medium hover:bg-teal-700 flex items-center justify-center gap-1"
                 >
-                  <ChevronRight className="w-3.5 h-3.5" /> Update Status
+                  <ChevronRight className="w-3.5 h-3.5" /> {saving ? 'Saving...' : 'Update Status'}
                 </button>
               </div>
               <div className="flex gap-2">
@@ -275,7 +363,7 @@ export function OfficialDashboard() {
                 >
                   <Star className="w-3.5 h-3.5" /> Feedback
                 </button>
-                <button className="flex-1 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-1">
+                <button onClick={() => setCloseConfirm(true)} className="flex-1 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-1">
                   <X className="w-3.5 h-3.5" /> Close Complaint
                 </button>
               </div>
@@ -283,6 +371,14 @@ export function OfficialDashboard() {
           </div>
         </>
       )}
+      <ConfirmModal
+        isOpen={closeConfirm}
+        title="Close Complaint"
+        message="Close this complaint as completed? Citizens will no longer be able to cancel it."
+        confirmLabel={saving ? 'Closing...' : 'Close Complaint'}
+        onConfirm={handleCloseComplaint}
+        onCancel={() => setCloseConfirm(false)}
+      />
     </div>
   );
 }

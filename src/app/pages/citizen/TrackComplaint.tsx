@@ -1,37 +1,45 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router';
 import { Search, MapPin, CalendarDays, FileText, XCircle } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../lib/auth';
 import { StatusBadge, PriorityBadge } from '../../components/common/StatusBadge';
-import type { Complaint } from '../../data/mockData';
-import { fetchComplaints, normalizeComplaint } from '../../utils/complaintApi';
+import type { Complaint } from '../../../lib/types';
+import { complaintsApi } from '../../../lib/api';
+import { ConfirmModal } from '../../components/common/ConfirmModal';
+import { toast } from 'sonner';
 
 export function TrackComplaint() {
   const { user } = useAuth();
+  const { id } = useParams();
   const [query, setQuery] = useState('');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [selected, setSelected] = useState<Complaint | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  const loadComplaints = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const rows = await complaintsApi.getAll();
+      setComplaints(rows as any[]);
+      const requested = id ? rows.find((row: Complaint) => String(row.id) === id || row.ticket_number === id) : null;
+      setSelected(requested || rows[0] || null);
+    } catch (err: any) {
+      setError(err.message || 'Unable to load complaints');
+      setComplaints([]);
+      setSelected(null);
+      toast.error(err.message || 'Unable to load complaints');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadComplaints() {
-      setLoading(true);
-      try {
-        const rows = await fetchComplaints(user?.id);
-        const normalized = rows.map(row => normalizeComplaint(row, user?.name || 'Citizen'));
-        setComplaints(normalized);
-        setSelected(prev => prev ?? normalized[0] ?? null);
-      } catch (error) {
-        console.error(error);
-        setComplaints([]);
-        setSelected(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadComplaints();
-  }, [user?.id, user?.name]);
+  }, [user?.id, id]);
 
   const visibleComplaints = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -45,26 +53,18 @@ export function TrackComplaint() {
   }, [complaints, query]);
 
   const handleCancelComplaint = async () => {
-    if (!selected?.rawId) return;
-    if (!window.confirm('Cancel this complaint?')) return;
+    if (!selected?.id) return;
 
     setActionLoading(true);
     try {
-      const response = await fetch(`/api/complaints/${selected.rawId}/cancel`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const updatedRow = await complaintsApi.update(selected.id, { status: 'Cancelled' });
 
-      if (!response.ok) throw new Error('cancel failed');
-
-      const updatedRow = await response.json();
-      const updatedComplaint = normalizeComplaint(updatedRow, user?.name || 'Citizen');
-
-      setComplaints(prev => prev.map(item => item.rawId === updatedComplaint.rawId ? updatedComplaint : item));
-      setSelected(updatedComplaint);
-    } catch (error) {
-      console.error(error);
-      alert('Failed to cancel complaint.');
+      setComplaints(prev => prev.map(item => item.id === updatedRow.id ? updatedRow as any : item));
+      setSelected(updatedRow as any);
+      setConfirmCancel(false);
+      toast.success('Complaint cancelled');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to cancel complaint');
     } finally {
       setActionLoading(false);
     }
@@ -93,9 +93,18 @@ export function TrackComplaint() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="space-y-2">
           {loading ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 text-sm text-gray-500">Loading your complaints...</div>
+            Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)
+          ) : error ? (
+            <div className="bg-white rounded-xl border border-red-200 p-4 text-sm text-red-600">
+              <p>{error}</p>
+              <button onClick={loadComplaints} className="mt-3 px-3 py-1.5 border border-red-200 rounded-lg text-xs hover:bg-red-50">Try again</button>
+            </div>
           ) : visibleComplaints.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 text-sm text-gray-500">No complaints found.</div>
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500">
+              <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="font-medium">No complaints found</p>
+              <p className="text-xs text-gray-400 mt-1">Search another ID or submit a new complaint.</p>
+            </div>
           ) : (
             visibleComplaints.map(complaint => (
               <button
@@ -106,7 +115,7 @@ export function TrackComplaint() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="text-xs font-mono text-gray-500">{complaint.id}</span>
+                  <span className="text-xs font-mono text-gray-500">{complaint.ticket_number || complaint.id.substring(0,8)}</span>
                   <StatusBadge status={complaint.status} />
                 </div>
                 <p className="text-sm text-gray-900 font-medium line-clamp-1">{complaint.title}</p>
@@ -122,7 +131,7 @@ export function TrackComplaint() {
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-sm text-gray-500">{selected.id}</span>
+                    <span className="font-mono text-sm text-gray-500">{selected.ticket_number || selected.id.substring(0,8)}</span>
                     <StatusBadge status={selected.status} />
                   </div>
                   <h3 className="text-gray-900">{selected.title}</h3>
@@ -149,7 +158,7 @@ export function TrackComplaint() {
                   <CalendarDays className="w-4 h-4 mt-0.5 text-gray-400" />
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-400">Submitted</p>
-                    <p>{selected.date}</p>
+                    <p>{selected.created_at ? new Date(selected.created_at).toLocaleDateString() : selected.date}</p>
                   </div>
                 </div>
                 <div>
@@ -176,7 +185,7 @@ export function TrackComplaint() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={handleCancelComplaint}
+                onClick={() => setConfirmCancel(true)}
                 disabled={!canCancel || actionLoading}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -190,6 +199,14 @@ export function TrackComplaint() {
           </div>
         )}
       </div>
+      <ConfirmModal
+        isOpen={confirmCancel}
+        title="Cancel Complaint"
+        message="Are you sure you want to cancel this complaint? This action updates the complaint status immediately."
+        confirmLabel={actionLoading ? 'Cancelling...' : 'Cancel Complaint'}
+        onConfirm={handleCancelComplaint}
+        onCancel={() => setConfirmCancel(false)}
+      />
     </div>
   );
 }

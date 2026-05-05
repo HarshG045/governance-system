@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../lib/auth';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronRight, ChevronLeft, MapPin, Upload, X, CheckCircle, CloudUpload, FileText, Image } from 'lucide-react';
-import { fetchComplaintById } from '../../utils/complaintApi';
+import { complaintsApi } from '../../../lib/api';
+import { toast } from 'sonner';
 
 type Step = 1 | 2 | 3;
 
@@ -28,6 +29,8 @@ export function SubmitComplaint() {
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [existingAttachments, setExistingAttachments] = useState('[]');
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Step 1
   const [title, setTitle] = useState('');
@@ -53,7 +56,7 @@ export function SubmitComplaint() {
       setLoadingExisting(true);
       setLoadError('');
       try {
-        const row = await fetchComplaintById(editId);
+        const row = await complaintsApi.getById(editId);
         if (user?.id && row.user_id && row.user_id !== user.id) {
           throw new Error('unauthorized');
         }
@@ -66,11 +69,10 @@ export function SubmitComplaint() {
         setPriority((row.priority as string) || 'Medium');
         setDescription(row.description || '');
         setLocation(row.location || '');
-        setExistingAttachments(row.attachments || '[]');
+        setExistingAttachments(JSON.stringify(row.attachments || []));
         setSubmittedId(String(row.id));
         setStep(1);
-      } catch (error) {
-        console.error(error);
+      } catch {
         if (active) {
           setLoadError('Unable to load this complaint for editing.');
         }
@@ -109,37 +111,70 @@ export function SubmitComplaint() {
     setFiles(prev => [...prev, ...newFiles]);
   };
 
+  const validateStep = (targetStep = step) => {
+    const nextErrors: Record<string, string> = {};
+    if (targetStep === 1 || targetStep === 3) {
+      if (!title.trim()) nextErrors.title = 'Complaint title is required';
+      if (!category) nextErrors.category = 'Category is required';
+      if (!description.trim()) nextErrors.description = 'Description is required';
+      if (!location.trim()) nextErrors.location = 'Location is required';
+    }
+    if (targetStep === 3 && !confirmed) nextErrors.confirmed = 'Confirm the information before submitting';
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleUseLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by this browser');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setLocation(`${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
+        toast.success('Current location added');
+      },
+      () => toast.error('Unable to access your location')
+    );
+  };
+
   const handleSubmit = async () => {
+    if (!validateStep(3)) return;
     if (!confirmed) return;
-    const attachmentsPayload = files.length > 0
+      const attachmentsPayload = files.length > 0
       ? files.map(file => ({ name: file.name, size: file.size, type: file.type }))
       : isEditMode
-        ? existingAttachments
+        ? JSON.parse(existingAttachments || '[]')
         : [];
 
+    setSaving(true);
     try {
-      const res = await fetch(isEditMode && editId ? `/api/complaints/${editId}` : '/api/complaints', {
-        method: isEditMode ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          description,
-          user_id: user?.id ?? 'anonymous',
-          category,
-          department,
-          priority,
-          location,
-          attachments: attachmentsPayload,
-        }),
-      });
-      if (!res.ok) throw new Error('submit failed');
-      const data = await res.json();
-      // use DB id directly and render a single # in the UI
-      setSubmittedId(String(data.id));
+      const payload = {
+        title,
+        description,
+        citizen_id: user?.id,
+        category,
+        department,
+        priority,
+        location,
+        attachments: attachmentsPayload,
+      };
+      
+      let data;
+      if (isEditMode && editId) {
+        data = await complaintsApi.update(editId, payload);
+      } else {
+        data = await complaintsApi.create(payload);
+      }
+      
+      setSubmittedId(data.ticket_number || String(data.id));
       setSubmitted(true);
-    } catch (err) {
-      console.error(err);
-      alert('Failed to submit complaint. Try again later.');
+      toast.success(isEditMode ? 'Complaint updated' : 'Complaint submitted');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit complaint');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -250,10 +285,11 @@ export function SubmitComplaint() {
                   <input
                     type="text"
                     value={title}
-                    onChange={e => setTitle(e.target.value)}
+                    onChange={e => { setTitle(e.target.value); setErrors(prev => ({ ...prev, title: '' })); }}
                     placeholder="Briefly describe the issue"
                     className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  {errors.title && <p className="text-xs text-red-600 mt-1">{errors.title}</p>}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -261,12 +297,13 @@ export function SubmitComplaint() {
                     <label className="block text-sm text-gray-700 mb-1.5">Category *</label>
                     <select
                       value={category}
-                      onChange={e => handleCategoryChange(e.target.value)}
+                      onChange={e => { handleCategoryChange(e.target.value); setErrors(prev => ({ ...prev, category: '' })); }}
                       className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       <option value="">Select category</option>
                       {categories.map(c => <option key={c}>{c}</option>)}
                     </select>
+                    {errors.category && <p className="text-xs text-red-600 mt-1">{errors.category}</p>}
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-1.5">Department</label>
@@ -304,12 +341,13 @@ export function SubmitComplaint() {
                   <label className="block text-sm text-gray-700 mb-1.5">Description *</label>
                   <textarea
                     value={description}
-                    onChange={e => setDescription(e.target.value.slice(0, 1000))}
+                    onChange={e => { setDescription(e.target.value.slice(0, 1000)); setErrors(prev => ({ ...prev, description: '' })); }}
                     rows={5}
                     placeholder="Provide detailed description of the issue..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   />
                   <div className="text-right text-xs text-gray-400 mt-0.5">{description.length}/1000</div>
+                  {errors.description && <p className="text-xs text-red-600 mt-1">{errors.description}</p>}
                 </div>
 
                 <div>
@@ -320,28 +358,32 @@ export function SubmitComplaint() {
                       <input
                         type="text"
                         value={location}
-                        onChange={e => setLocation(e.target.value)}
+                        onChange={e => { setLocation(e.target.value); setErrors(prev => ({ ...prev, location: '' })); }}
                         placeholder="Enter address or landmark"
                         className="w-full pl-10 pr-3 h-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <button
                       type="button"
-                      onClick={() => setLocation('Current Location (GPS)')}
+                      onClick={handleUseLocation}
                       className="flex items-center gap-1.5 px-3 h-10 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap"
                     >
                       <MapPin className="w-3.5 h-3.5" /> Use my location
                     </button>
                   </div>
+                  {errors.location && <p className="text-xs text-red-600 mt-1">{errors.location}</p>}
                 </div>
 
-                {/* Mini Map Placeholder */}
-                <div className="h-32 bg-gradient-to-br from-green-100 to-blue-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={handleUseLocation}
+                  className="w-full h-32 bg-gradient-to-br from-green-100 to-blue-100 rounded-lg border border-gray-200 flex items-center justify-center hover:border-blue-300 transition-colors"
+                >
                   <div className="text-center">
                     <MapPin className="w-6 h-6 text-red-500 mx-auto mb-1" />
-                    <p className="text-xs text-gray-500">Click to drop pin on map (optional)</p>
+                    <p className="text-xs text-gray-500">Use browser GPS coordinates</p>
                   </div>
-                </div>
+                </button>
               </div>
             )}
 
@@ -430,6 +472,7 @@ export function SubmitComplaint() {
                   <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5 accent-blue-600" />
                   <span className="text-sm text-gray-700">I confirm the information above is accurate and true to the best of my knowledge.</span>
                 </label>
+                {errors.confirmed && <p className="text-xs text-red-600">{errors.confirmed}</p>}
               </div>
             )}
 
@@ -443,7 +486,10 @@ export function SubmitComplaint() {
               </button>
               {step < 3 ? (
                 <button
-                  onClick={() => setStep((step + 1) as Step)}
+                  onClick={() => {
+                    if (step === 1 && !validateStep(1)) return;
+                    setStep((step + 1) as Step);
+                  }}
                   className="flex items-center gap-2 px-6 py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700"
                 >
                   Next <ChevronRight className="w-4 h-4" />
@@ -451,10 +497,10 @@ export function SubmitComplaint() {
               ) : (
                   <button
                     onClick={handleSubmit}
-                    disabled={!confirmed}
+                    disabled={!confirmed || saving}
                     className="flex items-center gap-2 px-6 py-2 bg-[#1A56DB] text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
                   >
-                    <Upload className="w-4 h-4" /> {isEditMode ? 'Update Complaint' : 'Submit Complaint'}
+                    <Upload className="w-4 h-4" /> {saving ? 'Saving...' : isEditMode ? 'Update Complaint' : 'Submit Complaint'}
                   </button>
               )}
             </div>

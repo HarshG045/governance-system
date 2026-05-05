@@ -7,5 +7,10 @@
 
   Run `npm i` to install the dependencies.
 
-  Run `npm run dev` to start the development server.
+  ### Supabase Setup
   
+  1. Create a project at [Supabase](https://supabase.com).
+  2. In your Supabase Dashboard, go to **SQL Editor** and run the contents of `supabase/migrations/00001_schema.sql` followed by `supabase/migrations/00002_rls.sql`.
+  3. Create a `.env` file based on `.env.example` and fill in your `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+
+  Run `npm run dev` to start the development server.

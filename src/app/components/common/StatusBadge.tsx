@@ -1,4 +1,4 @@
-import type { ComplaintStatus, ComplaintPriority } from '../../data/mockData';
+import type { ComplaintStatus, ComplaintPriority } from '../../../lib/types';
 
 interface StatusBadgeProps {
   status: ComplaintStatus;

@@ -6,8 +6,11 @@ import {
   Info, BarChart2, Users, Shield, Download, Activity, Settings,
   Building2, Menu, X, ChevronDown, FilePlus,
 } from 'lucide-react';
-import { useAuth, type UserRole } from '../../contexts/AuthContext';
-import { mockNotifications } from '../../data/mockData';
+import { useAuth, type UserRole } from '../../../lib/auth';
+import { notificationsApi } from '../../../lib/api';
+import { useEffect } from 'react';
+import type { NotificationItem } from '../../../lib/types';
+import { toast } from 'sonner';
 
 const citizenMenu = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/citizen' },
@@ -51,20 +54,91 @@ const roleConfig: Record<UserRole, { label: string; color: string; bgColor: stri
 };
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/');
+      return;
+    }
+
+    if (!loading && user) {
+      const section = location.pathname.split('/')[1];
+      if (['citizen', 'official', 'admin'].includes(section) && section !== user.role) {
+        navigate('/403');
+      }
+    }
+  }, [user, loading, navigate, location.pathname]);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
 
   const role = user?.role ?? 'citizen';
-  const cfg = roleConfig[role];
-  const unreadCount = mockNotifications.filter(n => !n.read).length;
+  const cfg = roleConfig[role as UserRole] || roleConfig.citizen;
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (user?.id) {
+      notificationsApi.getUserNotifications().then(notifs => {
+        setNotifications(notifs as any[]);
+        setUnreadCount(notifs.filter((n: any) => !n.is_read).length);
+      }).catch(() => {
+        toast.error('Unable to load notifications');
+      });
+    }
+  }, [user?.id]);
 
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const handleGlobalSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = globalSearch.trim();
+    if (!query) return;
+
+    if (role === 'admin') navigate(`/admin/users?q=${encodeURIComponent(query)}`);
+    if (role === 'official') navigate(`/official?search=${encodeURIComponent(query)}`);
+    if (role === 'citizen') navigate(`/citizen/complaints?q=${encodeURIComponent(query)}`);
+    setGlobalSearch('');
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsApi.markAllAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+      toast.success('Notifications marked as read');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to mark notifications as read');
+    }
+  };
+
+  const handleClearNotifications = async () => {
+    try {
+      await notificationsApi.clearAll();
+      setNotifications([]);
+      setUnreadCount(0);
+      toast.success('Notifications cleared');
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to clear notifications');
+    }
+  };
+
+  const handleProfileNavigate = () => {
+    setProfileOpen(false);
+    navigate(`/${role}/profile`);
+  };
+
+  const handleSettingsNavigate = () => {
+    setProfileOpen(false);
+    navigate(role === 'admin' ? '/admin/settings' : `/${role}/profile`);
   };
 
   const isActive = (path: string) => {
@@ -148,16 +222,18 @@ export function AppLayout() {
           </div>
 
           {/* Search */}
-          <div className="flex-1 max-w-sm mx-auto">
+          <form onSubmit={handleGlobalSearch} className="flex-1 max-w-sm mx-auto">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
+                value={globalSearch}
+                onChange={e => setGlobalSearch(e.target.value)}
                 placeholder="Search complaints, IDs..."
                 className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-          </div>
+          </form>
 
           <div className="flex items-center gap-2 ml-auto">
             {/* Notifications */}
@@ -177,21 +253,24 @@ export function AppLayout() {
                   <div className="absolute right-0 top-10 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-20">
                     <div className="flex items-center justify-between p-4 border-b border-gray-100">
                       <span className="font-medium text-gray-900 text-sm">Notifications</span>
-                      <button className="text-xs text-blue-600 hover:underline">Mark all read</button>
+                      <button onClick={handleMarkAllRead} className="text-xs text-blue-600 hover:underline">Mark all read</button>
                     </div>
                     <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-                      {mockNotifications.map((n) => (
-                        <div key={n.id} className={`p-3 flex items-start gap-3 hover:bg-gray-50 ${!n.read ? 'bg-blue-50/50' : ''}`}>
-                          <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.read ? 'bg-transparent' : 'bg-blue-500'}`} />
+                      {notifications.map((n) => (
+                        <div key={n.id} className={`p-3 flex items-start gap-3 hover:bg-gray-50 ${!n.is_read ? 'bg-blue-50/50' : ''}`}>
+                          <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-blue-500'}`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-gray-700">{n.message}</p>
-                            <p className="text-xs text-gray-400 mt-0.5">{n.timestamp}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{new Date(n.created_at || '').toLocaleString()}</p>
                           </div>
                         </div>
                       ))}
+                      {notifications.length === 0 && (
+                        <div className="p-6 text-center text-xs text-gray-500">No notifications</div>
+                      )}
                     </div>
                     <div className="p-3 border-t border-gray-100">
-                      <button className="text-xs text-red-500 hover:underline">Clear all</button>
+                      <button onClick={handleClearNotifications} className="text-xs text-red-500 hover:underline">Clear all</button>
                     </div>
                   </div>
                 </>
@@ -222,10 +301,10 @@ export function AppLayout() {
                       <p className="text-sm font-medium text-gray-900">{user?.name}</p>
                       <p className="text-xs text-gray-500">{user?.email}</p>
                     </div>
-                    <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                    <button onClick={handleProfileNavigate} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                       <User className="w-3.5 h-3.5" /> Profile
                     </button>
-                    <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                    <button onClick={handleSettingsNavigate} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                       <Settings className="w-3.5 h-3.5" /> Settings
                     </button>
                     <div className="border-t border-gray-100 mt-1">

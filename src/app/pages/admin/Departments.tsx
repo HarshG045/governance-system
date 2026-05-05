@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Plus, Edit2, Eye, Building2 } from 'lucide-react';
-import { mockDepartments } from '../../data/mockData';
-import type { Department } from '../../data/mockData';
+import { Plus, Edit2, Eye, Building2, AlertCircle, Trash2 } from 'lucide-react';
+import { departmentsApi, usersApi } from '../../../lib/api';
+import type { Department, AppUser } from '../../../lib/types';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
+import { ConfirmModal } from '../../components/common/ConfirmModal';
 
 const deptIcons: Record<string, string> = {
   'Public Works Department': '🏗️',
@@ -13,37 +16,98 @@ const deptIcons: Record<string, string> = {
 };
 
 export function Departments() {
-  const [departments, setDepartments] = useState<Department[]>(mockDepartments);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [officials, setOfficials] = useState<AppUser[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editDept, setEditDept] = useState<Department | null>(null);
+  const [viewDept, setViewDept] = useState<Department | null>(null);
+  const [deleteDept, setDeleteDept] = useState<Department | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
-  const [formHead, setFormHead] = useState('');
+  const [formHeadId, setFormHeadId] = useState('');
   const [formDesc, setFormDesc] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [depts, users] = await Promise.all([
+        departmentsApi.getAll(),
+        usersApi.getAll({ role: 'official' })
+      ]);
+      setDepartments(depts as any[]);
+      setOfficials(users as any[]);
+    } catch (err: any) {
+      const message = err.message || 'Unable to load departments';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
 
   const openAdd = () => {
     setEditDept(null);
-    setFormName(''); setFormCode(''); setFormHead(''); setFormDesc('');
+    setFormName(''); setFormCode(''); setFormHeadId(''); setFormDesc('');
+    setFormErrors({});
     setShowModal(true);
   };
 
   const openEdit = (d: Department) => {
     setEditDept(d);
-    setFormName(d.name); setFormCode(d.code); setFormHead(d.head); setFormDesc(d.description);
+    setFormName(d.name); setFormCode(d.code); setFormHeadId(d.head_id || ''); setFormDesc(d.description);
+    setFormErrors({});
     setShowModal(true);
   };
 
-  const handleSave = () => {
-    if (editDept) {
-      setDepartments(prev => prev.map(d => d.id === editDept.id ? { ...d, name: formName, code: formCode, head: formHead, description: formDesc } : d));
-    } else {
-      setDepartments(prev => [...prev, {
-        id: Date.now().toString(), name: formName, code: formCode,
-        head: formHead, complaintsThisMonth: 0, officials: 0, description: formDesc,
-      }]);
+  const handleSave = async () => {
+    const nextErrors: Record<string, string> = {};
+    if (!formName.trim()) nextErrors.name = 'Department name is required';
+    if (!formCode.trim()) nextErrors.code = 'Department code is required';
+    if (!formDesc.trim()) nextErrors.description = 'Description is required';
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+
+    setSaving(true);
+    try {
+      const payload = { name: formName, code: formCode, head_id: formHeadId || null, description: formDesc };
+      if (editDept) {
+        await departmentsApi.update(editDept.id, payload);
+        toast.success('Department updated');
+      } else {
+        await departmentsApi.create(payload);
+        toast.success('Department created');
+      }
+      await load();
+      setShowModal(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Unable to save department');
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteDept) return;
+    const snapshot = departments;
+    setDepartments(prev => prev.filter(dept => dept.id !== deleteDept.id));
+    setDeleteDept(null);
+    try {
+      await departmentsApi.remove(deleteDept.id);
+      toast.success('Department deleted');
+    } catch (err: any) {
+      setDepartments(snapshot);
+      toast.error(err.message || 'Unable to delete department');
+    }
   };
 
   return (
@@ -61,6 +125,17 @@ export function Departments() {
         </button>
       </div>
 
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-64 bg-gray-100 rounded-xl animate-pulse" />)}
+        </div>
+      ) : error ? (
+        <div className="bg-white border border-red-200 rounded-xl p-8 text-center text-red-600">
+          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+          <p className="text-sm">{error}</p>
+          <button onClick={load} className="mt-3 px-3 py-1.5 border border-red-200 rounded-lg text-xs hover:bg-red-50">Try again</button>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {departments.map(d => (
           <div key={d.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
@@ -91,7 +166,7 @@ export function Departments() {
 
             <div className="flex items-center gap-1 text-xs text-gray-500 mb-4">
               <span>Head:</span>
-              <span className="font-medium text-gray-700">{d.head}</span>
+              <span className="font-medium text-gray-700">{d.head || (d.users ? d.users.name : 'Unassigned')}</span>
             </div>
 
             <div className="flex gap-2">
@@ -101,8 +176,11 @@ export function Departments() {
               >
                 <Edit2 className="w-3 h-3" /> Edit
               </button>
-              <button className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100">
+              <button onClick={() => setViewDept(d)} className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100">
                 <Eye className="w-3 h-3" /> View
+              </button>
+              <button onClick={() => setDeleteDept(d)} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs hover:bg-red-100">
+                <Trash2 className="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -122,45 +200,69 @@ export function Departments() {
           </div>
         </button>
       </div>
+      )}
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={event => event.stopPropagation()}>
             <h3 className="text-gray-900 mb-5">{editDept ? 'Edit Department' : 'Add Department'}</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-gray-700 mb-1">Department Name</label>
                   <input value={formName} onChange={e => setFormName(e.target.value)} className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="e.g. Public Works" />
+                  {formErrors.name && <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-700 mb-1">Code</label>
                   <input value={formCode} onChange={e => setFormCode(e.target.value)} className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="e.g. PWD" />
+                  {formErrors.code && <p className="text-xs text-red-600 mt-1">{formErrors.code}</p>}
                 </div>
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Head Official</label>
-                <select value={formHead} onChange={e => setFormHead(e.target.value)} className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-white">
+                <select value={formHeadId} onChange={e => setFormHeadId(e.target.value)} className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-white">
                   <option value="">Select official...</option>
-                  <option>Priya Singh</option>
-                  <option>Deepak Verma</option>
-                  <option>Sunita Rao</option>
-                  <option>Anita Joshi</option>
+                  {officials.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Description</label>
                 <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" placeholder="Department description and responsibilities..." />
+                {formErrors.description && <p className="text-xs text-red-600 mt-1">{formErrors.description}</p>}
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSave} className="flex-1 py-2 bg-[#DC2626] text-white rounded-lg text-sm font-medium hover:bg-red-700">Save</button>
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-2 bg-[#DC2626] text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60">{saving ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>
       )}
+      {viewDept && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setViewDept(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={event => event.stopPropagation()}>
+            <h3 className="text-gray-900 mb-3">{viewDept.name}</h3>
+            <div className="space-y-2 text-sm text-gray-600">
+              <p><span className="text-gray-400">Code:</span> {viewDept.code}</p>
+              <p><span className="text-gray-400">Head:</span> {viewDept.head || 'Unassigned'}</p>
+              <p><span className="text-gray-400">Officials:</span> {viewDept.officials || 0}</p>
+              <p><span className="text-gray-400">This month:</span> {viewDept.complaintsThisMonth || 0} complaints</p>
+              <p><span className="text-gray-400">Description:</span> {viewDept.description}</p>
+            </div>
+            <button onClick={() => setViewDept(null)} className="mt-5 w-full py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Close</button>
+          </div>
+        </div>
+      )}
+      <ConfirmModal
+        isOpen={!!deleteDept}
+        title="Delete Department"
+        message="Delete this department? Existing linked records will lose the department reference."
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDept(null)}
+      />
     </div>
   );
 }
